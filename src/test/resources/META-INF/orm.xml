@@ -175,7 +175,7 @@
 					<cascade-all/>
 				</cascade>
 			</many-to-one>
-			<many-to-many name="membros" target-entity="br.com.pos.academico.entidade.Pessoa">
+			<many-to-many name="membros" target-entity="br.com.pos.academico.entidade.Pessoa" fetch="EAGER">
 				<join-table name="banca_membro">
 					<inverse-join-column name="palestrante_codigo" unique="false"/>
 				</join-table>

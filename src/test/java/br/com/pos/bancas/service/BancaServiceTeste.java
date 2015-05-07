@@ -1,10 +1,15 @@
-package br.com.pos.bancas.dao;
+package br.com.pos.bancas.service;
 
 import static junit.framework.Assert.assertEquals;
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
@@ -12,10 +17,19 @@ import java.util.Set;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.Persistence;
+import javax.ws.rs.client.Client;
+import javax.ws.rs.client.ClientBuilder;
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.core.MediaType;
 
+import org.jboss.resteasy.plugins.server.sun.http.HttpContextBuilder;
+import org.jboss.resteasy.spi.ResourceFactory;
+import org.jboss.resteasy.test.TestPortProvider;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
+import com.sun.net.httpserver.HttpServer;
 
 import br.com.pos.academico.constante.Graduacao;
 import br.com.pos.academico.constante.GrupoUsuario;
@@ -23,27 +37,52 @@ import br.com.pos.academico.constante.Situacao;
 import br.com.pos.academico.entidade.Curso;
 import br.com.pos.academico.entidade.Pessoa;
 import br.com.pos.academico.entidade.Usuario;
+import br.com.pos.banca.constante.Acao;
 import br.com.pos.banca.constante.TipoBanca;
 import br.com.pos.banca.dao.BancaDao;
+import br.com.pos.banca.dao.BancaDao;
+import br.com.pos.banca.dao.BancaDao;
+import br.com.pos.banca.entidade.Banca;
+import br.com.pos.banca.entidade.Banca;
 import br.com.pos.banca.entidade.Banca;
 import br.com.pos.banca.entidade.Trabalho;
 import br.com.pos.persistencia.Paginacao;
 
-public class BancaDaoTeste {
+public class BancaServiceTeste {
 	
+	private Client cliente;
 	private EntityManager manager;
 	private EntityManagerFactory factory;
 	
+	private HttpServer server;
+	private HttpContextBuilder builder;
+	
 	@Before
-	public void iniciar() {
+	public void iniciar() throws IOException {
 		factory = Persistence.createEntityManagerFactory("bancas");
 		manager = factory.createEntityManager();
+		cliente = ClientBuilder.newClient();
+		
+		int porta = TestPortProvider.getPort();
+		
+		server = HttpServer.create(new InetSocketAddress(porta), 10);
+		ResourceFactory resourceFactory = new BancaServiceFactory(manager);
+
+		builder = new HttpContextBuilder();
+		builder.bind(server);
+
+		builder.getDeployment().getRegistry().addResourceFactory(resourceFactory);
+		server.start();
 	}
 	
 	@After
 	public void terminar() {
+		cliente.close(); 
 		manager.close();
 		factory.close();
+		
+		builder.cleanup();
+		server.stop(0);
 	}
 	
 	/**
@@ -197,106 +236,112 @@ public class BancaDaoTeste {
 	}
 	
 	/**
-	 * Metodo responsavel por testar o metodo que busca uma Banca atraves de um exemplo.
+	 * Metodo responsavel por testar o metodo que busca um Banca atraves de um exemplo.
 	 * @throws Exception
 	 */
 	@Test
 	public void buscar() throws Exception {
 		Banca banca = preencherBancaQualificacao();
-
 		BancaDao bancaDao = new BancaDao(manager);
 		bancaDao.persistir(banca);
 		
 		Banca exemplo = new Banca();
 		exemplo.setTipo(TipoBanca.QUALIFICACAO);
 		
-		Collection<Banca> bancas = bancaDao.buscar(exemplo, new Paginacao());
-		assertThat(bancas.isEmpty(), is(false));
-		assertEquals(1, bancas.size());
+		//Collection<Banca> response = cliente.target(TestPortProvider.generateURL("/banca")).path("/buscar").request().post(Entity.entity(banca, MediaType.APPLICATION_JSON), Collection.class);
+		Collection<Banca> response = cliente.target(TestPortProvider.generateURL("/banca")).path("/buscar").request().post(Entity.entity(exemplo, MediaType.APPLICATION_JSON), Collection.class);
+		
+		assertThat(response.isEmpty(), is(false));
+		assertEquals(1, response.size());
 	}
 	
 	/**
-	 * Metodo responsavel por testar o metodo que insere uma Banca no banco. 
+	 * Metodo responsavel por testar o metodo que insere um Banca no banco. 
 	 * @throws Exception
 	 */
 	@Test
 	public void persistir() throws Exception {
-		Banca banca = this.preencherBancaQualificacao();
-		
-		BancaDao bancaDao = new BancaDao(manager);
 		Collection<Banca> bancas;
-		
+		BancaDao bancaDao = new BancaDao(manager);
 		bancas = bancaDao.buscar(new Banca(), new Paginacao());
+		
 		assertThat(bancas.isEmpty(), is(true));
+		Banca banca = preencherBancaQualificacao();
 		
-		bancaDao.persistir(banca);
+		Banca response = cliente.target(TestPortProvider.generateURL("/banca")).path("/persistir").request().post(Entity.entity(banca, MediaType.APPLICATION_JSON), Banca.class);
+		assertThat(response.getTipo(), is(TipoBanca.QUALIFICACAO));
 		
 		bancas = bancaDao.buscar(new Banca(), new Paginacao());
-		assertThat(bancas.isEmpty(), is(false));	
+		assertEquals(1, bancas.size());	
 	}
 	
 	/**
-	 * Metodo responsavel por testar a listagem sem nenhuma Banca previamente cadastrada. 
+	 * Metodo responsavel por testar a listagem sem nenhum Banca previamente cadastrado. 
 	 * @throws Exception
 	 */
 	@Test
 	public void listarVazio() throws Exception {
 		BancaDao bancaDao = new BancaDao(manager);
-		Collection<Banca> bancas = bancaDao.buscar(new Banca(), new Paginacao());
-		assertThat(bancas.isEmpty(), is(true));
+		Collection<Banca> periodosAcesso = bancaDao.buscar(new Banca(), new Paginacao());
+		assertThat(periodosAcesso.isEmpty(), is(true));
 	}
 
 	/**
-	 * Metodo responsavel por testar a listagem com duas Banca previamente cadastradas. 
+	 * Metodo responsavel por testar a listagem com dois Banca previamente cadastrados. 
 	 * @throws Exception
 	 */
 	@Test
 	public void listar() throws Exception {
-		Banca bancaQualificacao = this.preencherBancaQualificacao();
-		Banca bancaDefesa = this.preencherBancaDefesa();
-		
+		Collection<Banca> bancas;
 		BancaDao bancaDao = new BancaDao(manager);
+		bancas = bancaDao.buscar(new Banca(), new Paginacao());
 		
-		bancaDao.persistir(bancaQualificacao);
-		bancaDao.persistir(bancaDefesa);
+		assertThat(bancas.isEmpty(), is(true));
 		
-		Collection<Banca> bancas = bancaDao.buscar(new Banca(), new Paginacao());
-		assertThat(bancas.isEmpty(), is(false));
+		Banca banca = preencherBancaQualificacao();
+		bancaDao.persistir(banca);
+		
+		bancas = cliente.target(TestPortProvider.generateURL("/banca")).path("/listar").request().get(Collection.class);
+		assertEquals(1, bancas.size());
 	}
 	
 	/**
-	 * Metodo responsavel por testar o metodo que altera uma Banca. 
+	 * Metodo responsavel por testar o metodo que altera um Banca. 
 	 * @throws Exception
 	 */
 	@Test
 	public void alterar() throws Exception {
-		Banca banca = this.preencherBancaQualificacao();
+		Banca banca = preencherBancaQualificacao();
+		
 		BancaDao bancaDao = new BancaDao(manager);
 		bancaDao.persistir(banca);
 		
 		Banca recuperado = bancaDao.obter(banca.getCodigo());
-		assertThat(recuperado.getTipo(), is(TipoBanca.QUALIFICACAO));
+		assertThat(recuperado.getTipo(), is(TipoBanca.QUALIFICACAO)); 	
 		
 		banca.setTipo(TipoBanca.DEFESA);
-		bancaDao.atualizar(banca);
 		
-		recuperado = bancaDao.obter(banca.getCodigo());
+		Banca response = cliente.target(TestPortProvider.generateURL("/banca")).path("/alterar").request().put(Entity.entity(banca, MediaType.APPLICATION_JSON), Banca.class);
+		
 		assertThat(recuperado.getTipo(), is(TipoBanca.DEFESA));
 	}
 
 	/**
-	 * Metodo responsavel por testar o metodo que exclui uma Banca.
+	 * Metodo responsavel por testar o metodo que exclui um Banca.
 	 * @throws Exception
 	 */
 	@Test
 	public void excluir() throws Exception {
-		Banca banca = this.preencherBancaQualificacao();
+		Banca banca = preencherBancaQualificacao();
 		BancaDao bancaDao = new BancaDao(manager);
 		bancaDao.persistir(banca);
+		Collection<Banca> bancas;
 		
-		Collection<Banca> bancas = bancaDao.buscar(new Banca(), new Paginacao());
+		bancas = bancaDao.buscar(new Banca(), new Paginacao());
 		assertThat(bancas.isEmpty(), is(false));
-		bancaDao.remover(banca);
+		
+		Integer codigo = banca.getCodigo();
+		Banca response = cliente.target(TestPortProvider.generateURL("/banca")).path("/excluir/{codigo}").resolveTemplate("codigo", codigo).request().delete(Banca.class);
 		
 		bancas = bancaDao.buscar(new Banca(), new Paginacao());
 		assertThat(bancas.isEmpty(), is(true));

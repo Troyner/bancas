@@ -2,6 +2,9 @@ package br.com.pos.banca.entidade;
 
 import java.util.Set;
 
+import javax.persistence.FetchType;
+import javax.persistence.ManyToOne;
+
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
